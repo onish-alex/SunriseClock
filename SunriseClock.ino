@@ -169,9 +169,6 @@ int lastClockCheck = 0;
 
 Preferences prefs; //access to flash memory
 
-//int counter = 0;
-//int direction = DIRECTION_CW;
-
 #pragma region Menu
 
 enum class MenuItem
@@ -191,14 +188,17 @@ struct MenuItemInfo {
 };
 
 const MenuItemInfo menuItems[] = {
-  MenuItemInfo("Date & clock", MenuItem::DATE_TIME, icon_datetime, 19, 20),
-  MenuItemInfo("Setting alarm", MenuItem::SETTING_ALARM, icon_alarm, 79, 20),
+  MenuItemInfo("Date & clock", MenuItem::DATE_TIME, icon_datetime, 19, 19),
+  MenuItemInfo("Setting alarm", MenuItem::SETTING_ALARM, icon_alarm, 79, 19),
 };
 
 constexpr int MENU_SIZE =
     sizeof(menuItems) / sizeof(menuItems[0]);
 
 int currentMenuItemIndex = 0;
+
+const char* selectLabel = "Select";
+const char* modeLabel = "Next";
 
 #pragma endregion
 
@@ -219,13 +219,14 @@ struct AlarmItemInfo {
   AlarmItem Code;
   const uint8_t* Icon;
   int x, y;
+  int backgroundWidth, backgroundHeight; 
 };
 
 const AlarmItemInfo alarmItems[] = {
-  AlarmItemInfo(AlarmItem::HOUR, NULL, 16, 5),
-  AlarmItemInfo(AlarmItem::MINUTE, NULL, 81, 5),
-  AlarmItemInfo(AlarmItem::ENABLE, NULL, 16, 36),
-  AlarmItemInfo(AlarmItem::RETURN, image_data_doorexiticon, 84, 31),
+  AlarmItemInfo(AlarmItem::HOUR, NULL, 21, 0, 25, 15),
+  AlarmItemInfo(AlarmItem::MINUTE, NULL, 76, 0, 25, 15),
+  AlarmItemInfo(AlarmItem::ENABLE, NULL, 16, 40, 35, 15),
+  AlarmItemInfo(AlarmItem::RETURN, image_data_doorexiticon, 84, 33, 30, 30),
 };
 
 constexpr int ALARM_MENU_SIZE =
@@ -291,13 +292,13 @@ void setup() {
   // again, this isn't done at reboot, so a previously set alarm could easily go overlooked
   rtc.disableAlarm(2);
 
-  alarmMinutesTmp = alarmSettings.hour * 60 + alarmSettings.minute; 
-  alarmEnabledTmp = alarmSettings.enabled;
-
   //reading alarmSettings from flash memory
   prefs.begin("settings", true);
   prefs.getBytes("alarm", &alarmSettings, sizeof(alarmSettings));
   prefs.end();
+
+  alarmMinutesTmp = alarmSettings.hour * 60 + alarmSettings.minute; 
+  alarmEnabledTmp = alarmSettings.enabled;
 
   #pragma endregion
 
@@ -332,6 +333,10 @@ void loop() {
       display.drawBitmap(menuItem.x, menuItem.y, menuItem.Icon, 30, 30, currentMenuItemIndex == i ? SSD1306_BLACK : SSD1306_WHITE);
     }
 
+    display.setCursor(0, 57);
+    snprintf(buffer, sizeof(buffer), "%s          %s", selectLabel, modeLabel);
+    displayPrint(buffer);
+
     display.display();
   }
   else if (currentMenuItem.Code == MenuItem::DATE_TIME) {
@@ -365,9 +370,6 @@ void loop() {
 
         displayPrintln("\n");
 
-        // Serial.printf(buffer);
-        // Serial.printf("\n");
-
         getTimeString(currentDateTime, buffer, sizeof(buffer));
         displayPrintln(buffer, DisplayOptions{2});
 
@@ -377,9 +379,6 @@ void loop() {
         display.setTextSize(2);
         display.write(0xF8);
 
-        // Serial.printf(buffer);
-        // Serial.printf("\n");
-
         display.display();
       }
     }
@@ -388,34 +387,14 @@ void loop() {
 
     needRedrawAlarmMenu = false;
 
-    // if (millis() - alarmMenuLastDisplayUpdate < 250)
-    //   return;
-
-    // alarmMenuLastDisplayUpdate = millis();
-
     displayClearResetPosition();
-    
-    //DateTime alarmTime = rtc.getAlarm1();
-    //DateTime alarmTime = DateTime(0, 0, 0, alarmSettings.hour, alarmSettings.minute, 0);
-
-    
-    // getTimeString(currentDateTime, buffer, sizeof(buffer));
-    // Serial.println(buffer);
-
-
-
-    //debug, printing alarmTime
-    // char alarmStr[12] = "DD hh:mm:ss";
-    // alarmTime.toString(alarmStr);
-    // Serial.println("Alarm1: ");
-    // Serial.print(alarmStr);
 
     for (int i = 0; i < ALARM_MENU_SIZE; i++) {
       
       AlarmItemInfo alarmItem = alarmItems[i];
 
       if (currentAlarmItemIndex == i) {
-        display.fillRect(alarmItem.x, alarmItem.y, 30, 30, SSD1306_WHITE);
+        display.fillRect(alarmItem.x, alarmItem.y, alarmItem.backgroundWidth, alarmItem.backgroundHeight, SSD1306_WHITE);
       }
 
       if (alarmItem.Icon) {
@@ -450,15 +429,9 @@ void loop() {
   encoderCLK = digitalRead(PIN_ENCODER_CLK);
 
   if (encoderCLK != prevEncoderCLK && encoderCLK == HIGH) {
-    Serial.println("Encoder rolled!");
-
-    if (digitalRead(PIN_ENCODER_DT) == HIGH)
-      Serial.println("counter-cw");
-    else if (digitalRead(PIN_ENCODER_DT) == LOW)
-      Serial.println("cw");
-
 
     handleEncoder(digitalRead(PIN_ENCODER_DT) != HIGH);
+    
   }
 
   prevEncoderCLK = encoderCLK; // save last CLK state
@@ -468,61 +441,33 @@ void loop() {
   modeButton.loop();
   selectButton.loop();
 
+  /*mode button - switching items inside menu*/
   if (modeButton.isPressed()) {
     Serial.printf("Mode button pressed");
     
+    /*if in menu - walk over menu items*/
     if (isInMenu) {
       
       currentMenuItemIndex = (currentMenuItemIndex + 1) % MENU_SIZE;
 
-      // if (currentMenuItemIndex == MENU_SIZE - 1) { //if last item, go to first
-      //   currentMenuItemIndex = 0;
-      // }
-      // else { //else go to next item
-      //   currentMenuItemIndex++; 
-      // }
-
     }
+    /*if in alarm menu - walk over alarm menu items*/
     else if (currentMenuItem.Code == MenuItem::SETTING_ALARM) {
       
-      currentAlarmItemIndex = (currentAlarmItemIndex + 1) % ALARM_MENU_SIZE; 
-     
-    //  if (currentAlarmItemIndex == ALARM_MENU_SIZE - 1) { //if last item, go to first
-    //     currentAlarmItemIndex = 0;
-    //   }
-    //   else { //else go to next item
-    //     currentAlarmItemIndex++;
-    //   }
+      currentAlarmItemIndex = (currentAlarmItemIndex + 1) % ALARM_MENU_SIZE;
 
       needRedrawAlarmMenu = true;
 
     }
-    else { //not in menu, but also not in alarm setting mode
+    /*not in menu, but also not in alarm setting mode - entering menu, setting first item as selected*/
+    else { 
 
       isInMenu = true;
       currentMenuItemIndex = 0;
     }
-
-    ///////////////////////////////////////////
-
-    // if (!isInMenu) { //if not in menu, open menu
-      
-    //   isInMenu = true;
-    //   currentMenuItemIndex = 0;
-    // }
-    // else { //else if in menu
-      
-    //   if (currentMenuItemIndex == MENU_SIZE - 1) { //if last item, go to first
-        
-    //     currentMenuItemIndex = 0;
-    //   }
-    //   else { //else go to next item
-
-    //     currentMenuItemIndex++; 
-    //   }
-    // }
   }
 
+  /*Select button - for entering menu item or changing settings*/
   if (selectButton.isPressed()) {
     Serial.printf("Select button pressed");
 
@@ -569,42 +514,13 @@ void handleEncoder(bool clockwise) {
   MenuItemInfo currentMenuItem = menuItems[currentMenuItemIndex];
   AlarmItemInfo currentAlarmItem = alarmItems[currentAlarmItemIndex];
 
-
-  // if (currentMenuItem.Code == MenuItem::SETTING_ALARM) {
-  //   Serial.println("i'm here");
-  //   if (currentAlarmItem.Code == AlarmItem::HOUR) {
-  //     Serial.println("and here !");
-  //       alarmMinutesTmp = clockwise 
-  //         ? (alarmMinutesTmp + 1440 + 60) % 1440
-  //         : (alarmMinutesTmp + 1440 - 60) % 1440;
-
-  //     alarmDisplayChanged = true;
-  //   }
-  //   else if (currentAlarmItem.Code == AlarmItem::MINUTE) {
-
-  //     alarmMinutesTmp = clockwise 
-  //       ? (alarmMinutesTmp + 1440 + 5) % 1440
-  //       : (alarmMinutesTmp + 1440 - 5) % 1440;
-
-  //     alarmDisplayChanged = true;
-
-  //   }
-  // }
-
   if (currentMenuItem.Code == MenuItem::SETTING_ALARM) {
   
-    int minutesDelta = 0;
-
-    if (currentAlarmItem.Code == AlarmItem::HOUR) {
-      
-      minutesDelta = 60;
-
-    }
-    else if (currentAlarmItem.Code == AlarmItem::MINUTE) {
-
-      minutesDelta = 5;
-
-    }
+    int minutesDelta = 
+      currentAlarmItem.Code == AlarmItem::HOUR 
+        ? 60 
+        : currentAlarmItem.Code == AlarmItem::MINUTE 
+          ? 5 : 0;
 
     if (currentAlarmItem.Code == AlarmItem::HOUR || 
         currentAlarmItem.Code == AlarmItem::MINUTE) { 
@@ -665,7 +581,7 @@ void tryInitDateTime() {
 }
 
 void getDateString(DateTime dateTime, char buffer[], size_t bufferLen) {
-  Serial.println(String(daysOfTheWeek[dateTime.dayOfTheWeek()]) + "-" + String(dateTime.year()) + "-" + String(dateTime.month()) + "-" + String(dateTime.day()));
+  //Serial.println(String(daysOfTheWeek[dateTime.dayOfTheWeek()]) + "-" + String(dateTime.year()) + "-" + String(dateTime.month()) + "-" + String(dateTime.day()));
   snprintf(buffer, bufferLen,
     "%s %02d.%02d.%04d",
     daysOfTheWeek[dateTime.dayOfTheWeek()],
@@ -675,7 +591,7 @@ void getDateString(DateTime dateTime, char buffer[], size_t bufferLen) {
 }
 
 void getTimeString(DateTime dateTime, char buffer[], size_t bufferLen) {
-  Serial.println(String(dateTime.hour()) + "-" + String(dateTime.minute()) + "-" + String(dateTime.second()));
+  //Serial.println(String(dateTime.hour()) + "-" + String(dateTime.minute()) + "-" + String(dateTime.second()));
   snprintf(buffer, bufferLen,
     "%02d:%02d:%02d",
     dateTime.hour(),
